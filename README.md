@@ -1,197 +1,317 @@
-# Distributed Raft Consensus Engine & Real-Time Interactive Visualizer
+# ConsensusLab
 
-An explainable, rigorous, paper-faithful implementation of the **Raft Distributed Consensus Algorithm** in pure asynchronous Python (`asyncio`), featuring an interactive real-time visualizer dashboard, dynamic node scaling, automated chaos engineering benchmarks, and live cluster failure injection.
+### Distributed Raft Consensus Engine, Real-Time Visualization & Independent Consistency Verification
 
-Designed with direct 1-to-1 fidelity to Diego Ongaro & John Ousterhout's seminal paper:  
-> **[*In Search of an Understandable Consensus Algorithm* (USENIX ATC '14)](https://raft.github.io/raft.pdf)**
+ConsensusLab is an interactive distributed systems laboratory built around the **Raft consensus algorithm**. It allows users to observe leader election, log replication, node failures, network partitions, and recovery through a real-time dashboard.
 
----
+Beyond visualizing consensus, ConsensusLab provides performance monitoring, committed-ledger consistency verification, and independent state-machine verification to help users understand what happens inside a distributed system during normal operation and failures.
 
-## 🌟 Key Features
-
-- **Pure Async Python Engine**: Complete Raft implementation using native `asyncio`, asynchronous TCP sockets, and zero heavy external framework dependencies for the consensus core.
-- **Strict Raft Paper Fidelity**: Direct implementation of Figure 2 invariants (Randomized election timeouts, strict term precedence, majority quorums, log consistency checks, Section 5.4.2 older-term commit safety rule).
-- **Interactive Visualizer ("God Panel")**: Real-time canvas-based network topology, animated RPC packet traffic, live election countdown progress rings, log inspectors, and state machine viewers.
-- **Live Chaos & Fault Injection**:
-  - **Kill / Revive Nodes**: Dynamically crash nodes and observe election failovers and leader log backfilling.
-  - **Network Partitions**: Split the cluster into custom isolated subnets (e.g., $3/2$ split) to visualize split-brain immunity and uncommitted log branches.
-  - **Isolate Leader**: Isolate the active leader to witness graceful timeout-based term leadership handoffs.
-  - **Drop / Delay Packets**: Simulate high latency and lossy networks on the fly.
-- **Dynamic Node Addition**: Dynamically scale the cluster size in pairs (e.g., $5 \rightarrow 7$ nodes) while preserving odd-quorum majority consensus.
-- **Comprehensive Chaos Test Suite**: 34 unit, integration, and failure-injection tests covering multi-node cluster failovers, split-brain protection, and log consistency recovery.
+**Explore consensus. Inject failures. Verify consistency. Observe recovery.**
 
 ---
 
-## 🏛️ System Architecture
+## ✨ Key Features
 
-The architecture is cleanly structured into three distinct tiers:
-1. **Interactive Visualizer & Client Layer**: Canvas-based UI and REST/WebSocket client.
-2. **Telemetry & Orchestration Layer**: FastAPI backend managing WebSocket broadcasts and cluster control commands.
-3. **Distributed Raft Core**: Independent `RaftNode` instances communicating via an asynchronous TCP RPC mesh.
+### 🔄 Raft Consensus Engine
+
+* Asynchronous Python implementation using `asyncio`.
+* Leader election with randomized election timeouts.
+* Leader heartbeats and log replication.
+* Majority-quorum-based commitment.
+* Log consistency checks and follower catch-up.
+* State-machine application of committed entries.
+
+### 🌐 Interactive Cluster Visualization
+
+* Real-time visualization of the Raft cluster.
+* Live node roles, terms, and commit indices.
+* Node selection and individual node controls.
+* Live system logs and cluster-state inspection.
+* Client terminal for key-value operations.
+* Dynamic node addition through the existing cluster controls.
+
+### ⚡ Performance Monitoring
+
+Monitor the cluster's behavior through a dedicated performance HUD.
+
+* Throughput in transactions per second.
+* Average and last measured command latency.
+* Committed transaction count.
+* Failed submission count.
+* Leader failover time.
+
+These metrics help users observe the performance implications of client operations and leadership changes.
+
+### 🔍 Committed-Ledger Consistency Verification
+
+ConsensusLab independently examines committed histories across cluster nodes.
+
+The verification system uses canonicalized committed entries and SHA-256 hash chains to compare ledger prefixes.
+
+It can identify conditions such as:
+
+* Consistent committed histories.
+* Nodes that are behind the reference history.
+* Divergent committed histories.
+* Nodes that are unavailable or encounter verification errors.
+
+This helps distinguish a node that is merely behind from one whose committed history differs from the reference.
+
+### 🧠 Independent State-Transition Verification
+
+ConsensusLab also verifies the state produced by committed operations.
+
+Rather than using a node's live key-value store to construct the expected state, the verifier independently replays committed log entries from an initial state and compares the reconstructed result with each node's applied state.
+
+The verification includes:
+
+* Canonical state fingerprints using SHA-256.
+* Comparison at each node's applied index.
+* Separate tracking of commit lag and application lag.
+* Detection of differences between expected and actual state.
+* Explicit handling of unavailable nodes and verification errors.
+
+**Why two verification systems?**
+
+Matching final key-value states does not necessarily prove that committed histories match. Ledger verification examines committed history, while state verification examines the state reconstructed from committed operations.
+
+Together, they provide complementary views of distributed consistency.
+
+### 🧪 Fault Injection & Recovery Experiments
+
+Experiment with failures and observe how the cluster responds.
+
+* Kill and revive nodes.
+* Isolate the active leader.
+* Create a 3/2 network partition in a five-node cluster.
+* Heal network partitions.
+* Observe elections, replication lag, and recovery.
+* Inspect consistency statuses before, during, and after failures.
+
+These controls make it possible to investigate majority-quorum behavior, node recovery, and convergence after connectivity is restored.
+
+---
+
+## 🏗️ System Architecture
+
+ConsensusLab is organized into three main layers.
 
 ```mermaid
 flowchart TB
-    subgraph UI_Tier["Interactive Client & Visualizer Tier"]
-        Browser["Web Visualizer (Canvas + UI)\nhttp://localhost:8000"]
-        CLI["Client KV Operations\nSET key=val / DEL key"]
+    subgraph Frontend["Interactive Visualization Layer"]
+        UI["Web Dashboard"]
+        Topology["Live Raft Topology"]
+        Controls["Client & Fault-Injection Controls"]
+        Metrics["Performance HUD"]
+        Verification["Ledger & State Verification"]
     end
 
-    subgraph Monitor_Tier["Telemetry & Orchestration Layer (monitor.py)"]
-        FastAPI["FastAPI App\nREST API Endpoints"]
-        WSHub["WebSocket Hub\nReal-time Event Broadcast"]
-        Harness["RaftCluster Harness\nLifecycle & Fault Controller"]
+    subgraph Backend["Monitoring & Orchestration Layer"]
+        API["FastAPI REST API"]
+        WS["WebSocket Event Hub"]
+        Harness["Cluster Lifecycle & Fault Controller"]
+        Monitor["Metrics & Verification APIs"]
     end
 
-    subgraph Cluster_Tier["Distributed Raft Cluster Mesh (raft/)"]
-        subgraph Node1["Raft Node 1 (Leader)"]
-            N1_Core["RaftNode\nState Machine Loop"]
-            N1_State["RaftState\nterm, log, commitIndex"]
-            N1_SM["KV Store\nState Machine"]
-            N1_RPC["RPCManager\nAsync TCP"]
-        end
-
-        subgraph Node2["Raft Node 2 (Follower)"]
-            N2_Core["RaftNode"]
-            N2_RPC["RPCManager"]
-        end
-
-        subgraph Node3["Raft Node 3 (Follower)"]
-            N3_Core["RaftNode"]
-            N3_RPC["RPCManager"]
-        end
+    subgraph Raft["Distributed Consensus Layer"]
+        Leader["Leader"]
+        F1["Follower"]
+        F2["Follower"]
+        F3["Follower"]
+        F4["Follower"]
     end
 
-    Browser <-->|WebSocket Events| WSHub
-    Browser -->|HTTP REST /api/*| FastAPI
-    CLI -->|Execute Command| FastAPI
-
-    FastAPI --> Harness
-    Harness -->|Inject Chaos / Route| Cluster_Tier
-
-    N1_Core <--> N1_State
-    N1_Core -->|Apply Committed| N1_SM
-    N1_Core <--> N1_RPC
-
-    N1_RPC <==>|Async TCP: RequestVote / AppendEntries| N2_RPC
-    N1_RPC <==>|Async TCP: RequestVote / AppendEntries| N3_RPC
-    N2_RPC <==>|Async TCP: RequestVote / AppendEntries| N3_RPC
-
-    Cluster_Tier -.->|Telemetry Event Stream| WSHub
+    UI <--> API
+    UI <--> WS
+    Controls --> Harness
+    API --> Monitor
+    Harness --> Raft
+    Leader <--> F1
+    Leader <--> F2
+    Leader <--> F3
+    Leader <--> F4
+    Raft --> Monitor
+    Monitor --> Metrics
+    Monitor --> Verification
+    WS --> Topology
 ```
 
-### Node State Transitions (Section 5.1 / Figure 4)
+### 1. Interactive Frontend
 
+The HTML, CSS, and JavaScript frontend renders the cluster topology, node information, performance metrics, verification results, and fault-injection controls.
 
-```mermaid
-stateDiagram-v2
-    [*] --> Follower: Boot
-    Follower --> Candidate: Election Timeout (Times out, starts election)
-    Candidate --> Candidate: Split Vote / Timeout (New term, restart election)
-    Candidate --> Leader: Receives votes from majority of servers
-    Candidate --> Follower: Discovers current leader or higher term
-    Leader --> Follower: Discovers server with higher term
-```
+### 2. Monitoring & Orchestration
+
+`monitor.py` provides the FastAPI application, REST endpoints, WebSocket communication, and cluster-control integration.
+
+### 3. Raft Consensus Core
+
+The `raft/` package contains the distributed consensus implementation, including node behavior, state models, RPC communication, and the independent verification components.
 
 ---
 
-## 📑 Raft Paper Cross-Reference
+## 🛠️ Technology Stack
 
-Every component maps directly to the rules and invariants defined in **Figure 2 (Rules for Servers)** of the Raft paper:
-
-| Paper Section | Topic | Code Implementation | Description |
-| :--- | :--- | :--- | :--- |
-| **§ 5.1** | **Raft Basics & Roles** | [`raft/state.py`](raft/state.py)<br>[`raft/node.py`](raft/node.py) | `NodeRole` (Follower, Candidate, Leader), 1-based log indexing, strict term precedence ($T > \text{currentTerm}$ reverts to Follower). |
-| **§ 5.2** | **Leader Election** | [`raft/node.py`](raft/node.py)<br>[`raft/messages.py`](raft/messages.py) | Randomized election timers (`150ms-300ms`), `RequestVoteArgs/Reply`, single-vote-per-term invariant, majority quorum $(\lfloor N/2 \rfloor + 1)$. |
-| **§ 5.2 / 5.3** | **Heartbeats & Replication** | [`raft/node.py`](raft/node.py) | Leader periodic heartbeat broadcasting (30–50ms), client write handling, `AppendEntriesArgs/Reply` exchange, advancing `commitIndex`. |
-| **§ 5.4.1** | **Election Restriction** | [`raft/node.py`](raft/node.py) | Reject candidates whose log is less up-to-date (`cand_term > my_term` or `cand_term == my_term and cand_index >= my_index`). |
-| **§ 5.4.2** | **Current-Term Commit Rule** | [`raft/node.py`](raft/node.py) | A leader *never* commits entries from older terms by counting replicas directly; only entries from the leader's current term can trigger commit progression. |
-| **§ 5.3** | **Log Inconsistency Recovery** | [`raft/node.py`](raft/node.py) | `next_index` backtracking, divergent uncommitted entry truncation, and automatic state machine convergence. |
+| Component               | Technology                       |
+| ----------------------- | -------------------------------- |
+| Programming language    | Python                           |
+| Asynchronous execution  | `asyncio`                        |
+| Backend API             | FastAPI                          |
+| Real-time communication | WebSockets                       |
+| Frontend                | HTML, CSS, JavaScript            |
+| Consensus algorithm     | Raft                             |
+| Ledger verification     | SHA-256 hash chains              |
+| State verification      | Independent committed-log replay |
+| Automated testing       | pytest                           |
 
 ---
 
-## 🚀 Quickstart
+## 🚀 Getting Started
 
-### 1. Requirements & Installation
+### Prerequisites
 
-- Python 3.10+
-- Install dependencies:
+* Python 3.10 or newer.
+* Git.
+* A modern web browser.
 
-```powershell
-pip install -r requirements.txt
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Wizard52007/INNOVISE-2026.git
+cd INNOVISE-2026
 ```
 
-### 2. Launch the Interactive Web Visualizer
+### 2. Create a virtual environment
 
-Start the live cluster monitor server:
+**Windows PowerShell:**
 
 ```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+**Linux/macOS:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### 3. Install dependencies
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+### 4. Start the application
+
+```bash
 python monitor.py
 ```
 
-Open your browser and navigate to:
-```
-http://localhost:8000
-```
+### 5. Open the dashboard
 
-From the dashboard, you can:
-- **Send Key-Value Writes**: Propose state machine transitions (e.g., `x = 10`, `user = alice`).
-- **Simulate Partitions**: Create 3/2 majority-minority splits or isolate the active leader.
-- **Inject Chaos**: Kill individual nodes, delay packets, or dynamically add nodes.
-- **Inspect Logs**: View uncommitted vs committed log entries side-by-side across all nodes in real time.
+Navigate to:
+
+**http://localhost:8000**
+
+From the dashboard, you can inspect the cluster, submit key-value commands, view performance metrics, and experiment with node failures and network partitions.
 
 ---
 
-## 🧪 Automated Testing Suite (`tests/`)
+## 📡 API Endpoints
 
-The test harness ([`tests/harness.py`](tests/harness.py)) deterministically executes and validates multi-node cluster scenarios:
+The following monitoring endpoints expose performance and consistency information.
 
-```
-tests/
-├── test_step1_state_machine.py   # 9 tests: State invariants & role transitions
-├── test_step2_rpc.py             # 8 tests: TCP wire protocol, framing & fault injection
-├── test_step3_election.py        # 5 tests: Quorums, heartbeats & re-elections
-├── test_step4_replication.py     # 4 tests: Sequential client writes & KV state commits
-├── test_step5_safety.py          # 4 tests: Election safety, backtracking & Section 5.4.2
-├── test_step6_chaos.py           # 3 tests: End-to-end chaos scenarios
-└── test_step8_monitor.py         # 1 test: Telemetry WebSocket and REST API verification
-```
+| Endpoint                      | Purpose                                         |
+| ----------------------------- | ----------------------------------------------- |
+| `GET /api/metrics`            | Retrieve consensus performance metrics          |
+| `GET /api/ledger/consistency` | Retrieve committed-ledger consistency results   |
+| `GET /api/state/verification` | Retrieve independent state-verification results |
 
-### Run All Tests (34 Tests Passing)
+The dashboard also uses the application's existing REST and WebSocket interfaces for cluster visualization, client operations, and fault-injection controls.
 
-```powershell
+---
+
+## 🧪 Running the Tests
+
+Run the complete automated test suite from the repository root:
+
+```bash
 python -m pytest tests/ -v
 ```
 
-### Chaos Scenarios Verified:
-1. **Scenario A (Leader Failure)**: Active leader process is terminated; remaining followers elect a new leader and commit new writes without lost data.
-2. **Scenario B (3 vs 2 Network Partition)**: 5-node cluster split into majority ($3/5$) and minority ($2/5$). Majority continues writes, minority safely rejects writes, and healing restores full parity.
-3. **Scenario C (Crash & Recovery)**: A follower crashes mid-replication, cluster commits 5 writes, follower revives, and leader automatically backfills all missing entries.
+The suite covers the existing Raft implementation, including state-machine behavior, RPC communication, elections, replication, safety, monitoring, performance metrics, committed-ledger consistency, and independent state verification.
+
+The current development version has reported **76 passing tests**. Run the command above against your checked-out revision to reproduce the result.
 
 ---
 
-## 📁 Repository Structure
+## 🔬 Example Experiments
 
-```
-.
-├── raft/                  # Pure Python Raft consensus core
-│   ├── node.py            # Main RaftNode event loop, election & replication logic
-│   ├── state.py           # Persistent & volatile Raft state models
-│   ├── messages.py        # Typed dataclasses for RPC args & replies
-│   └── rpc.py             # Async TCP wire protocol manager
-├── frontend/              # Interactive Visualizer Dashboard
-│   ├── index.html         # Real-time UI layout & control panels
-│   ├── app.js             # Canvas rendering, WebSocket client & interactive controls
-│   └── style.css          # VS Code-inspired dark aesthetic design system
-├── tests/                 # Automated testing & chaos validation suite
-│   ├── harness.py         # Multi-node in-memory / local network test cluster
-│   └── test_step*.py      # Phase 1 to Phase 8 test benchmarks
-├── monitor.py             # FastAPI telemetry server & WebSocket hub
-├── requirements.txt       # Project dependencies
-└── README.md
-```
+### Experiment 1: Client Write
+
+1. Start the cluster and wait for a leader to be elected.
+2. Submit a key-value command through the client terminal.
+3. Observe replication and commit-index changes.
+4. Inspect the global state and verification panels.
+
+### Experiment 2: Leader Failure
+
+1. Select the current leader.
+2. Kill the node.
+3. Observe the remaining nodes elect a replacement leader.
+4. Check whether previously committed data remains available.
+5. Verify the cluster after it stabilizes.
+
+### Experiment 3: Network Partition
+
+1. Create a 3/2 partition in a five-node cluster.
+2. Observe the majority and minority groups.
+3. Monitor commit indices and verification statuses.
+4. Heal the network.
+5. Check whether the nodes converge on the same committed history and state.
+
+The results depend on the actual cluster state and should be confirmed through the dashboard and verification APIs.
 
 ---
 
-## 📜 License
+## 📊 What Makes ConsensusLab Different?
 
-MIT License. Feel free to use and experiment!
+ConsensusLab combines three complementary capabilities:
+
+| Capability                     | Question it answers                                                         |
+| ------------------------------ | --------------------------------------------------------------------------- |
+| Performance monitoring         | How is the cluster performing?                                              |
+| Committed-ledger verification  | Do nodes agree on their committed histories?                                |
+| Independent state verification | Does each node's applied state match the independently reconstructed state? |
+
+The fault-injection controls make it possible to observe these properties under changing network and node conditions rather than examining only healthy operation.
+
+The project is intended as an interactive environment for exploring distributed consensus, monitoring behavior, and verifying consistency.
+
+---
+
+## ⚠️ Scope & Limitations
+
+* ConsensusLab implements and visualizes Raft-based consensus behavior; it is not a Byzantine fault-tolerant consensus system.
+* Verification reports consistency and discrepancies; it does not automatically repair divergent state.
+* Results reflect the implementation's current verification model and available log/state information.
+* Network-partition experiments should be interpreted using actual commit indices, API results, and recovery behavior.
+* Verification over the current in-memory log does not imply support for arbitrary log compaction or snapshot-based verification.
+
+---
+
+## 📚 References
+
+* Ongaro, D., and Ousterhout, J. **In Search of an Understandable Consensus Algorithm.** USENIX Annual Technical Conference, 2014.
+* [The Raft Consensus Algorithm](https://raft.github.io/)
+* [The Raft Paper (PDF)](https://raft.github.io/raft.pdf)
+
+---
+
+## 📄 License
+
+This project is distributed under the MIT License. See the repository's license file for details.
+
+The project builds upon the existing Raft implementation in the upstream repository. Preserve the original license and attribution notices.
