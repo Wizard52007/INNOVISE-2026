@@ -28,6 +28,7 @@ from raft.node import RaftNode
 from raft.state import NodeRole
 from tests.harness import RaftCluster
 from raft.metrics import ConsensusMetrics
+from raft.ledger import LedgerConsistencyChecker
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +216,36 @@ class ClusterMonitorController:
             "leader_id": leader_id,
             "partitions": partitions,
             "metrics": self.metrics.to_dict(),
+            "ledger_consistency": self.check_ledger_consistency(),
         }
+
+    def check_ledger_consistency(self) -> Dict[str, Any]:
+        """Evaluate committed ledger consistency across all cluster nodes."""
+        if not self.cluster:
+            return {
+                "timestamp": time.time(),
+                "cluster_status": "UNAVAILABLE",
+                "is_authoritative": False,
+                "reference_type": "NONE",
+                "reference_node": None,
+                "reference_commit_index": None,
+                "reference_commit_hash": None,
+                "nodes": {},
+                "summary": {},
+                "diagnostic_message": "Cluster not initialized",
+            }
+
+        active_leader_id: Optional[str] = None
+        for nid, node in self.cluster.nodes.items():
+            if node and node._is_running and node.role == NodeRole.LEADER:
+                active_leader_id = nid
+                break
+
+        report = LedgerConsistencyChecker.check_cluster_consistency(
+            nodes=self.cluster.nodes,
+            active_leader_id=active_leader_id,
+        )
+        return report.to_dict()
 
     async def kill_node(self, node_id: str) -> None:
         if not self.cluster or node_id not in self.cluster.node_ids:
@@ -340,6 +370,12 @@ async def get_cluster_state():
 async def get_metrics():
     """Return real-time performance metrics (throughput, latency, recovery)."""
     return controller.metrics.to_dict()
+
+
+@app.get("/api/ledger/consistency")
+async def get_ledger_consistency():
+    """Return cross-validator committed-ledger consistency verification report."""
+    return controller.check_ledger_consistency()
 
 
 @app.post("/api/command")

@@ -437,3 +437,81 @@ h6 {
 .blog-content li {
     margin-bottom: 8px;
 }
+
+
+/* Ledger Consistency Panel */
+.ledger-consistency-panel {
+    margin-bottom: 25px;
+}
+
+.consistency-header {
+    background: var(--bg-base);
+    border: 1px solid var(--border-color);
+    padding: 6px 8px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.consistency-status-badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 2px;
+    text-transform: uppercase;
+    font-family: 'Montserrat', sans-serif;
+}
+
+.status-consistent {
+    background: #22c55e;
+    color: #ffffff;
+}
+
+.status-degraded, .status-behind {
+    background: #eab308;
+    color: #151617;
+}
+
+.status-divergent, .status-error {
+    background: #ef4444;
+    color: #ffffff;
+}
+
+.status-no-leader, .status-unavailable {
+    background: #64748b;
+    color: #ffffff;
+}
+
+.consistency-ref {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.ledger-nodes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 140px;
+    overflow-y: auto;
+}
+
+.ledger-node-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 6px;
+    background: var(--bg-base);
+    border: 1px solid var(--border-color);
+    font-size: 0.75rem;
+}
+
+.ledger-node-name {
+    font-weight: 700;
+}
+
+.ledger-node-info {
+    font-size: 0.7rem;
+    color: #475569;
+}

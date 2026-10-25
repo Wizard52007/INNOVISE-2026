@@ -30,6 +30,9 @@ ws.onmessage = (event) => {
         if (clusterState && clusterState.metrics) {
             updateMetricsUI(clusterState.metrics);
         }
+        if (clusterState && clusterState.ledger_consistency) {
+            updateConsistencyUI(clusterState.ledger_consistency);
+        }
         const container = document.getElementById('node-container');
         const whiteboard = document.getElementById('whiteboard');
         
@@ -73,11 +76,78 @@ function updateMetricsUI(metrics) {
     }
 }
 
+function updateConsistencyUI(consistency) {
+    if (!consistency) return;
+    const statusEl = document.getElementById('cluster-ledger-status');
+    const refEl = document.getElementById('cluster-ledger-ref');
+    const listEl = document.getElementById('ledger-nodes-list');
+
+    if (statusEl && consistency.cluster_status) {
+        statusEl.innerText = consistency.cluster_status;
+        statusEl.className = 'consistency-status-badge';
+        const st = (consistency.cluster_status || '').toLowerCase();
+        if (st.includes('consistent') && !st.includes('degraded')) {
+            statusEl.classList.add('status-consistent');
+        } else if (st.includes('behind') || st.includes('degraded')) {
+            statusEl.classList.add('status-behind');
+        } else if (st.includes('divergent') || st.includes('error')) {
+            statusEl.classList.add('status-divergent');
+        } else {
+            statusEl.classList.add('status-no-leader');
+        }
+    }
+
+    if (refEl) {
+        if (consistency.reference_node) {
+            const authTag = consistency.is_authoritative ? 'Auth' : 'Prov';
+            const cIdx = consistency.reference_commit_index !== undefined && consistency.reference_commit_index !== null ? consistency.reference_commit_index : 0;
+            refEl.innerText = `${consistency.reference_node} (${authTag} #${cIdx})`;
+        } else {
+            refEl.innerText = 'Ref: None';
+        }
+    }
+
+    if (listEl && consistency.nodes) {
+        listEl.innerHTML = '';
+        Object.keys(consistency.nodes).sort().forEach(nid => {
+            const n = consistency.nodes[nid];
+            const row = document.createElement('div');
+            row.className = 'ledger-node-row';
+
+            let extra = `commit #${n.commit_index || 0}`;
+            if (n.status === 'BEHIND' && n.lag !== null && n.lag !== undefined) {
+                extra += ` (lag: ${n.lag})`;
+            } else if (n.status === 'DIVERGENT' && n.mismatch_index !== null && n.mismatch_index !== undefined) {
+                extra += ` (diff @ #${n.mismatch_index})`;
+            } else if (n.status === 'AHEAD') {
+                extra += ` (ahead)`;
+            } else if (n.status === 'UNAVAILABLE') {
+                extra = 'offline';
+            } else if (n.status === 'ERROR') {
+                extra = 'error';
+            }
+
+            row.innerHTML = `<span class="ledger-node-name">${nid}: ${n.status || 'UNKNOWN'}</span><span class="ledger-node-info">${extra}</span>`;
+            listEl.appendChild(row);
+        });
+    }
+}
+
 async function fetchMetrics() {
     try {
         const res = await fetch('/api/metrics');
         const data = await res.json();
         updateMetricsUI(data);
+    } catch (e) {
+        // gracefully ignore
+    }
+}
+
+async function fetchConsistency() {
+    try {
+        const res = await fetch('/api/ledger/consistency');
+        const data = await res.json();
+        updateConsistencyUI(data);
     } catch (e) {
         // gracefully ignore
     }
@@ -93,6 +163,11 @@ async function fetchState() {
             updateMetricsUI(data.metrics);
         } else {
             fetchMetrics();
+        }
+        if (data.ledger_consistency) {
+            updateConsistencyUI(data.ledger_consistency);
+        } else {
+            fetchConsistency();
         }
         
         const container = document.getElementById('node-container');
@@ -390,12 +465,15 @@ function updateGlobalState(kv) {
 }
 
 // UI Buttons
-document.getElementById('btn-submit').addEventListener('click', () => {
+document.getElementById('btn-submit').addEventListener('click', async () => {
     const key = document.getElementById('cmd-key').value;
     const val = document.getElementById('cmd-val').value;
     if (key && val) {
         appendLog('info', `Sending client command: ${key}=${val}`);
-        apiPost('/command', {op: 'SET', key: key, val: val});
+        const res = await apiPost('/command', {op: 'SET', key: key, val: val});
+        if (res && res.snapshot && res.snapshot.ledger_consistency) {
+            updateConsistencyUI(res.snapshot.ledger_consistency);
+        }
     }
 });
 
