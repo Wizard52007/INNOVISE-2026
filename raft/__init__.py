@@ -15,6 +15,12 @@ from raft.ledger import (
     LedgerConsistencyChecker,
     LedgerStatus,
 )
+from raft.verifier import (
+    ClusterStateStatus,
+    GENESIS_STATE_HASH,
+    NodeStateStatus,
+    StateTransitionVerifier,
+)
 from raft.rpc import RPCManager
 from raft.state import LogEntry, NodeRole, RaftState
 
@@ -25,6 +31,10 @@ __all__ = [
     "LedgerStatus",
     "ClusterConsistencyStatus",
     "GENESIS_HASH",
+    "StateTransitionVerifier",
+    "NodeStateStatus",
+    "ClusterStateStatus",
+    "GENESIS_STATE_HASH",
     "RaftState",
     "LogEntry",
     "NodeRole",

@@ -1,5 +1,7 @@
 let clusterState = { nodes: {} };
 let selectedNodeId = null;
+let currentConsistency = null;
+let currentStateVerif = null;
 
 // Setup WebSocket
 const ws = new WebSocket(`ws://${window.location.host}/ws`);
@@ -31,7 +33,10 @@ ws.onmessage = (event) => {
             updateMetricsUI(clusterState.metrics);
         }
         if (clusterState && clusterState.ledger_consistency) {
-            updateConsistencyUI(clusterState.ledger_consistency);
+            updateConsistencyUI(clusterState.ledger_consistency, null);
+        }
+        if (clusterState && clusterState.state_verification) {
+            updateConsistencyUI(null, clusterState.state_verification);
         }
         const container = document.getElementById('node-container');
         const whiteboard = document.getElementById('whiteboard');
@@ -76,16 +81,21 @@ function updateMetricsUI(metrics) {
     }
 }
 
-function updateConsistencyUI(consistency) {
-    if (!consistency) return;
+function updateConsistencyUI(consistency, stateVerif) {
+    if (consistency) currentConsistency = consistency;
+    if (stateVerif) currentStateVerif = stateVerif;
+
     const statusEl = document.getElementById('cluster-ledger-status');
+    const stateStatusEl = document.getElementById('cluster-state-status');
     const refEl = document.getElementById('cluster-ledger-ref');
+    const stateHashEl = document.getElementById('cluster-state-hash');
     const listEl = document.getElementById('ledger-nodes-list');
 
-    if (statusEl && consistency.cluster_status) {
-        statusEl.innerText = consistency.cluster_status;
+    // 1. Ledger Status Badge
+    if (statusEl && currentConsistency && currentConsistency.cluster_status) {
+        statusEl.innerText = currentConsistency.cluster_status;
         statusEl.className = 'consistency-status-badge';
-        const st = (consistency.cluster_status || '').toLowerCase();
+        const st = (currentConsistency.cluster_status || '').toLowerCase();
         if (st.includes('consistent') && !st.includes('degraded')) {
             statusEl.classList.add('status-consistent');
         } else if (st.includes('behind') || st.includes('degraded')) {
@@ -97,37 +107,67 @@ function updateConsistencyUI(consistency) {
         }
     }
 
-    if (refEl) {
-        if (consistency.reference_node) {
-            const authTag = consistency.is_authoritative ? 'Auth' : 'Prov';
-            const cIdx = consistency.reference_commit_index !== undefined && consistency.reference_commit_index !== null ? consistency.reference_commit_index : 0;
-            refEl.innerText = `${consistency.reference_node} (${authTag} #${cIdx})`;
+    // 2. State Machine Status Badge
+    if (stateStatusEl && currentStateVerif && currentStateVerif.cluster_state_status) {
+        stateStatusEl.innerText = currentStateVerif.cluster_state_status;
+        stateStatusEl.className = 'consistency-status-badge';
+        const st = (currentStateVerif.cluster_state_status || '').toLowerCase();
+        if (st === 'verified') {
+            stateStatusEl.classList.add('status-verified');
+        } else if (st.includes('lag')) {
+            stateStatusEl.classList.add('status-behind');
+        } else if (st.includes('divergent') || st.includes('error')) {
+            stateStatusEl.classList.add('status-divergent');
+        } else {
+            stateStatusEl.classList.add('status-no-leader');
+        }
+    }
+
+    // 3. Reference and State Fingerprint
+    if (refEl && currentConsistency) {
+        if (currentConsistency.reference_node) {
+            const authTag = currentConsistency.is_authoritative ? 'Auth' : 'Prov';
+            const cIdx = currentConsistency.reference_commit_index !== undefined && currentConsistency.reference_commit_index !== null ? currentConsistency.reference_commit_index : 0;
+            refEl.innerText = `${currentConsistency.reference_node} (${authTag} #${cIdx})`;
         } else {
             refEl.innerText = 'Ref: None';
         }
     }
 
-    if (listEl && consistency.nodes) {
+    if (stateHashEl && currentStateVerif) {
+        if (currentStateVerif.reference_state_hash) {
+            stateHashEl.innerText = `State: ${currentStateVerif.reference_state_hash.substring(0, 8)}...`;
+        } else {
+            stateHashEl.innerText = 'State: -';
+        }
+    }
+
+    // 4. Per-node breakdown
+    if (listEl) {
+        const nodesMap = (currentConsistency && currentConsistency.nodes) || (currentStateVerif && currentStateVerif.nodes) || {};
         listEl.innerHTML = '';
-        Object.keys(consistency.nodes).sort().forEach(nid => {
-            const n = consistency.nodes[nid];
+        Object.keys(nodesMap).sort().forEach(nid => {
+            const ln = currentConsistency && currentConsistency.nodes && currentConsistency.nodes[nid];
+            const sn = currentStateVerif && currentStateVerif.nodes && currentStateVerif.nodes[nid];
+
             const row = document.createElement('div');
             row.className = 'ledger-node-row';
 
-            let extra = `commit #${n.commit_index || 0}`;
-            if (n.status === 'BEHIND' && n.lag !== null && n.lag !== undefined) {
-                extra += ` (lag: ${n.lag})`;
-            } else if (n.status === 'DIVERGENT' && n.mismatch_index !== null && n.mismatch_index !== undefined) {
-                extra += ` (diff @ #${n.mismatch_index})`;
-            } else if (n.status === 'AHEAD') {
-                extra += ` (ahead)`;
-            } else if (n.status === 'UNAVAILABLE') {
-                extra = 'offline';
-            } else if (n.status === 'ERROR') {
-                extra = 'error';
+            const lStatus = ln ? ln.status : 'UNKNOWN';
+            const sStatus = sn ? sn.status : 'UNKNOWN';
+
+            let extra = `commit #${(ln && ln.commit_index) || 0}, applied #${(sn && sn.last_applied) || 0}`;
+            if (sn && sn.status === 'APPLICATION_LAG' && sn.application_lag) {
+                extra += ` (app lag: ${sn.application_lag})`;
+            } else if (sn && sn.status === 'STATE_DIVERGENT' && sn.differing_keys && sn.differing_keys.length > 0) {
+                extra += ` (diff: [${sn.differing_keys.slice(0, 2).join(',')}])`;
+            } else if (ln && ln.status === 'DIVERGENT' && ln.mismatch_index) {
+                extra += ` (log diff @ #${ln.mismatch_index})`;
+            } else if (ln && ln.status === 'BEHIND' && ln.lag) {
+                extra += ` (commit lag: ${ln.lag})`;
             }
 
-            row.innerHTML = `<span class="ledger-node-name">${nid}: ${n.status || 'UNKNOWN'}</span><span class="ledger-node-info">${extra}</span>`;
+            row.innerHTML = `<span class="ledger-node-name">${nid}: ${lStatus} | ${sStatus}</span><span class="ledger-node-info">${extra}</span>`;
             listEl.appendChild(row);
         });
     }
@@ -147,7 +187,17 @@ async function fetchConsistency() {
     try {
         const res = await fetch('/api/ledger/consistency');
         const data = await res.json();
-        updateConsistencyUI(data);
+        updateConsistencyUI(data, null);
+    } catch (e) {
+        // gracefully ignore
+    }
+}
+
+async function fetchStateVerification() {
+    try {
+        const res = await fetch('/api/state/verification');
+        const data = await res.json();
+        updateConsistencyUI(null, data);
     } catch (e) {
         // gracefully ignore
     }
@@ -165,9 +215,14 @@ async function fetchState() {
             fetchMetrics();
         }
         if (data.ledger_consistency) {
-            updateConsistencyUI(data.ledger_consistency);
+            updateConsistencyUI(data.ledger_consistency, null);
         } else {
             fetchConsistency();
+        }
+        if (data.state_verification) {
+            updateConsistencyUI(null, data.state_verification);
+        } else {
+            fetchStateVerification();
         }
         
         const container = document.getElementById('node-container');
@@ -471,8 +526,9 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
     if (key && val) {
         appendLog('info', `Sending client command: ${key}=${val}`);
         const res = await apiPost('/command', {op: 'SET', key: key, val: val});
-        if (res && res.snapshot && res.snapshot.ledger_consistency) {
-            updateConsistencyUI(res.snapshot.ledger_consistency);
+        if (res && res.snapshot) {
+            if (res.snapshot.ledger_consistency) updateConsistencyUI(res.snapshot.ledger_consistency, null);
+            if (res.snapshot.state_verification) updateConsistencyUI(null, res.snapshot.state_verification);
         }
     }
 });

@@ -29,6 +29,7 @@ from raft.state import NodeRole
 from tests.harness import RaftCluster
 from raft.metrics import ConsensusMetrics
 from raft.ledger import LedgerConsistencyChecker
+from raft.verifier import StateTransitionVerifier
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +218,7 @@ class ClusterMonitorController:
             "partitions": partitions,
             "metrics": self.metrics.to_dict(),
             "ledger_consistency": self.check_ledger_consistency(),
+            "state_verification": self.check_state_verification(),
         }
 
     def check_ledger_consistency(self) -> Dict[str, Any]:
@@ -242,6 +244,35 @@ class ClusterMonitorController:
                 break
 
         report = LedgerConsistencyChecker.check_cluster_consistency(
+            nodes=self.cluster.nodes,
+            active_leader_id=active_leader_id,
+        )
+        return report.to_dict()
+
+    def check_state_verification(self) -> Dict[str, Any]:
+        """Evaluate independent state-transition verification across all cluster nodes."""
+        if not self.cluster:
+            return {
+                "timestamp": time.time(),
+                "cluster_state_status": "UNAVAILABLE",
+                "is_authoritative": False,
+                "reference_type": "NONE",
+                "reference_node": None,
+                "reference_commit_index": None,
+                "reference_applied_index": None,
+                "reference_state_hash": None,
+                "nodes": {},
+                "summary": {},
+                "diagnostic_message": "Cluster not initialized",
+            }
+
+        active_leader_id: Optional[str] = None
+        for nid, node in self.cluster.nodes.items():
+            if node and node._is_running and node.role == NodeRole.LEADER:
+                active_leader_id = nid
+                break
+
+        report = StateTransitionVerifier.verify_cluster_state(
             nodes=self.cluster.nodes,
             active_leader_id=active_leader_id,
         )
@@ -376,6 +407,12 @@ async def get_metrics():
 async def get_ledger_consistency():
     """Return cross-validator committed-ledger consistency verification report."""
     return controller.check_ledger_consistency()
+
+
+@app.get("/api/state/verification")
+async def get_state_verification():
+    """Return independent cross-validator state-transition verification report."""
+    return controller.check_state_verification()
 
 
 @app.post("/api/command")

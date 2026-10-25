@@ -125,10 +125,20 @@
             </div>
 
             <div class="panel-section ledger-consistency-panel">
-                <h3>Ledger Consistency</h3>
+                <h3>Ledger & State Verification</h3>
                 <div class="consistency-header">
-                    <span class="consistency-status-badge status-no-leader" id="cluster-ledger-status">Checking...</span>
+                    <div style="display: flex; flex-direction: column; gap: 3px;">
+                        <span class="hud-label" style="font-size: 0.6rem;">Committed Ledger</span>
+                        <span class="consistency-status-badge status-no-leader" id="cluster-ledger-status">Checking...</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 3px; align-items: flex-end;">
+                        <span class="hud-label" style="font-size: 0.6rem;">State Machine</span>
+                        <span class="consistency-status-badge status-no-leader" id="cluster-state-status">Checking...</span>
+                    </div>
+                </div>
+                <div class="consistency-sub-header" style="font-size: 0.75rem; padding: 2px 4px; margin-bottom: 6px; display: flex; justify-content: space-between;">
                     <span class="consistency-ref" id="cluster-ledger-ref">Ref: -</span>
+                    <span class="consistency-ref" id="cluster-state-hash" style="color: var(--text-secondary); font-size: 0.68rem;">State: -</span>
                 </div>
                 <div class="ledger-nodes-list" id="ledger-nodes-list"></div>
             </div>
