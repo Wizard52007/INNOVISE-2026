@@ -8,11 +8,13 @@ from raft.messages import (
     RPCMessage,
 )
 from raft.node import RaftNode
+from raft.metrics import ConsensusMetrics
 from raft.rpc import RPCManager
 from raft.state import LogEntry, NodeRole, RaftState
 
 __all__ = [
     "RaftNode",
+    "ConsensusMetrics",
     "RaftState",
     "LogEntry",
     "NodeRole",

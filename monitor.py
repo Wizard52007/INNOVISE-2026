@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import sys
+import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional, Set
 
@@ -26,6 +27,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from raft.node import RaftNode
 from raft.state import NodeRole
 from tests.harness import RaftCluster
+from raft.metrics import ConsensusMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -81,11 +83,29 @@ class ClusterMonitorController:
         self.cluster: Optional[RaftCluster] = None
         self.ws_hub = WebSocketHub()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self.metrics: ConsensusMetrics = ConsensusMetrics(window_seconds=10.0)
+        self.current_leader: Optional[str] = None
 
     def _setup_node_hooks(self, node: RaftNode) -> None:
         """Attach observer hooks to a node for state transitions and RPC packets."""
 
         def on_state(event: Dict[str, Any]) -> None:
+            node_id = node.node_id
+            new_role = event.get("role")
+            if new_role == "LEADER":
+                if self.metrics.is_recovering():
+                    self.metrics.record_recovery_end(node_id)
+                    if self._loop and self._loop.is_running():
+                        m_event = {
+                            "type": "METRICS_UPDATE",
+                            "event": "metrics_update",
+                            "data": self.metrics.to_dict(),
+                        }
+                        asyncio.run_coroutine_threadsafe(self.ws_hub.broadcast(m_event), self._loop)
+                self.current_leader = node_id
+            elif node_id == self.current_leader and new_role != "LEADER":
+                self.metrics.record_recovery_start(node_id)
+                self.current_leader = None
             msg = {
                 "type": "STATE_CHANGE",
                 "event": "state_change",
@@ -194,11 +214,15 @@ class ClusterMonitorController:
             "nodes": nodes_data,
             "leader_id": leader_id,
             "partitions": partitions,
+            "metrics": self.metrics.to_dict(),
         }
 
     async def kill_node(self, node_id: str) -> None:
         if not self.cluster or node_id not in self.cluster.node_ids:
             raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
+        if node_id == self.current_leader:
+            self.metrics.record_recovery_start(node_id)
+            self.current_leader = None
         await self.cluster.kill_node(node_id)
         # Broadcast state change for dead node using the full updated snapshot data
         snapshot = self.get_snapshot()
@@ -232,7 +256,24 @@ class ClusterMonitorController:
     async def execute_command(self, command: Any, timeout: float = 3.0) -> bool:
         if not self.cluster:
             raise HTTPException(status_code=500, detail="Cluster not initialized")
-        return await self.cluster.execute_command(command, timeout=timeout)
+        t_start = time.perf_counter()
+        success = await self.cluster.execute_command(command, timeout=timeout)
+        duration_ms = (time.perf_counter() - t_start) * 1000.0
+
+        if success:
+            self.metrics.record_commit(duration_ms)
+        else:
+            self.metrics.record_rejection()
+
+        if self._loop and self._loop.is_running():
+            m_event = {
+                "type": "METRICS_UPDATE",
+                "event": "metrics_update",
+                "data": self.metrics.to_dict(),
+            }
+            asyncio.run_coroutine_threadsafe(self.ws_hub.broadcast(m_event), self._loop)
+
+        return success
 
 
 controller = ClusterMonitorController(num_nodes=5)
@@ -249,6 +290,8 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown: Stop Raft cluster
     await controller.stop_cluster()
+    controller.metrics.reset()
+    controller.current_leader = None
 
 
 app = FastAPI(
@@ -291,6 +334,12 @@ class PartitionRequest(BaseModel):
 async def get_cluster_state():
     """Return the current topology, roles, terms, logs, and KV store of all nodes."""
     return controller.get_snapshot()
+
+
+@app.get("/api/metrics")
+async def get_metrics():
+    """Return real-time performance metrics (throughput, latency, recovery)."""
+    return controller.metrics.to_dict()
 
 
 @app.post("/api/command")
@@ -376,6 +425,8 @@ async def heal_partitions():
 async def reset_cluster():
     """Restart a fresh 5-node cluster."""
     await controller.stop_cluster()
+    controller.metrics.reset()
+    controller.current_leader = None
     await controller.start_cluster()
     snapshot = controller.get_snapshot()
     await controller.ws_hub.broadcast({

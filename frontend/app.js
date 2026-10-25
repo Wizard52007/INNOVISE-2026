@@ -21,10 +21,15 @@ ws.onmessage = (event) => {
         if (selectedNodeId === state.node_id) {
             updateSelectedNodePanel();
         }
+    } else if (msg.event === 'metrics_update') {
+        updateMetricsUI(msg.data);
     } else if (msg.event === 'rpc') {
         animatePacket(msg.data);
     } else if (msg.event === 'partition_change' || msg.event === 'cluster_snapshot') {
         clusterState = msg.data;
+        if (clusterState && clusterState.metrics) {
+            updateMetricsUI(clusterState.metrics);
+        }
         const container = document.getElementById('node-container');
         const whiteboard = document.getElementById('whiteboard');
         
@@ -45,12 +50,50 @@ ws.onmessage = (event) => {
     }
 };
 
+function updateMetricsUI(metrics) {
+    if (!metrics) return;
+    const tpsEl = document.getElementById('metric-tps');
+    const avgLatEl = document.getElementById('metric-avg-latency');
+    const lastLatEl = document.getElementById('metric-last-latency');
+    const comEl = document.getElementById('metric-committed');
+    const failEl = document.getElementById('metric-failed');
+    const recEl = document.getElementById('metric-recovery');
+
+    if (tpsEl && metrics.throughput_tps !== undefined) tpsEl.innerText = `${metrics.throughput_tps} TPS`;
+    if (avgLatEl) avgLatEl.innerText = metrics.average_latency_ms !== null && metrics.average_latency_ms !== undefined ? `${metrics.average_latency_ms} ms` : '0.0 ms';
+    if (lastLatEl) lastLatEl.innerText = metrics.last_latency_ms !== null && metrics.last_latency_ms !== undefined ? `${metrics.last_latency_ms} ms` : '0.0 ms';
+    if (comEl && metrics.committed_transactions !== undefined) comEl.innerText = metrics.committed_transactions;
+    if (failEl && metrics.failed_submissions !== undefined) failEl.innerText = metrics.failed_submissions;
+    if (recEl) {
+        if (metrics.last_recovery_duration_ms !== null && metrics.last_recovery_duration_ms !== undefined) {
+            recEl.innerText = `${metrics.last_recovery_duration_ms} ms`;
+        } else {
+            recEl.innerText = 'Not measured';
+        }
+    }
+}
+
+async function fetchMetrics() {
+    try {
+        const res = await fetch('/api/metrics');
+        const data = await res.json();
+        updateMetricsUI(data);
+    } catch (e) {
+        // gracefully ignore
+    }
+}
+
 // Initial state fetch
 async function fetchState() {
     try {
         const res = await fetch('/api/cluster');
         const data = await res.json();
         clusterState = data;
+        if (data.metrics) {
+            updateMetricsUI(data.metrics);
+        } else {
+            fetchMetrics();
+        }
         
         const container = document.getElementById('node-container');
         container.innerHTML = ''; // clear

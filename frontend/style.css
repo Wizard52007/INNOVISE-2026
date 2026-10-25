@@ -254,6 +254,35 @@ h6 {
     padding-bottom: 5px;
 }
 
+.hud-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.hud-item {
+    background: var(--bg-base);
+    padding: 6px 8px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+}
+
+.hud-label {
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    font-weight: 700;
+}
+
+.hud-val {
+    font-family: 'Inconsolata', monospace;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-top: 3px;
+}
+
 .sel-node-info {
     font-size: 0.9rem;
     line-height: 1.5;
