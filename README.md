@@ -1,18 +1,58 @@
-# ConsensusLab
+# ConsensusCraft
 
-### Distributed Raft Consensus Engine, Real-Time Visualization & Independent Consistency Verification
-
-ConsensusLab is an interactive distributed systems laboratory built around the **Raft consensus algorithm**. It allows users to observe leader election, log replication, node failures, network partitions, and recovery through a real-time dashboard.
-
-Beyond visualizing consensus, ConsensusLab provides performance monitoring, committed-ledger consistency verification, and independent state-machine verification to help users understand what happens inside a distributed system during normal operation and failures.
+### An Interactive Distributed Systems Laboratory for Raft Consensus, Fault Injection, and Independent Consistency Verification
 
 **Explore consensus. Inject failures. Verify consistency. Observe recovery.**
 
+ConsensusCraft is an interactive distributed-systems laboratory that makes the behavior of the **Raft consensus algorithm** visible and testable. Through a real-time web dashboard, users can observe leader elections, log replication, node failures, network partitions, recovery, and the consistency of replicated state.
+
+Instead of treating consensus as a black box, ConsensusCraft lets users experiment with cluster failures and inspect the resulting logs, metrics, and verification results.
+
+The project combines a Python-based Raft implementation, a FastAPI backend, a real-time frontend, performance monitoring, independent state verification, and an Integrity Attack Lab in one interactive environment.
+
 ---
+
+## Table of Contents
+
+* [Why ConsensusCraft?](#-why-consensuscraft)
+* [Key Features](#-key-features)
+* [How It Works](#-how-it-works)
+* [System Architecture](#-system-architecture)
+* [Technology Stack](#-technology-stack)
+* [Getting Started](#-getting-started)
+* [Exploring the Dashboard](#-exploring-the-dashboard)
+* [Running the Tests](#-running-the-tests)
+* [API Reference](#-api-reference)
+* [Example Experiments](#-example-experiments)
+* [Potential Applications](#-potential-applications)
+* [Scope and Limitations](#-scope-and-limitations)
+* [References](#-references)
+
+---
+
+## 💡 Why ConsensusCraft?
+
+Distributed systems must continue coordinating when individual nodes fail, communication is interrupted, or replicas temporarily fall behind.
+
+Understanding these situations requires more than observing a successful request. Developers also need to understand:
+
+* How a leader is elected.
+* Why a minority partition cannot commit new entries independently.
+* How committed log entries are replicated.
+* What happens when the current leader fails.
+* How replicas recover after connectivity returns.
+* Whether replicated nodes agree on their committed histories and application state.
+* How integrity checks respond when data is modified unexpectedly.
+
+ConsensusCraft provides an interactive environment for investigating these questions.
+
+It connects **consensus behavior, controlled failures, performance measurements, and independent verification** so that users can examine what the cluster actually does rather than relying only on a visual representation.
 
 ## ✨ Key Features
 
-### 🔄 Raft Consensus Engine
+### 1. 🔄 Raft Consensus Engine
+
+Explore the core mechanisms of a Raft-based distributed system.
 
 * Asynchronous Python implementation using `asyncio`.
 * Leader election with randomized election timeouts.
@@ -20,100 +60,169 @@ Beyond visualizing consensus, ConsensusLab provides performance monitoring, comm
 * Majority-quorum-based commitment.
 * Log consistency checks and follower catch-up.
 * State-machine application of committed entries.
+* Leader replacement following node failure.
 
-### 🌐 Interactive Cluster Visualization
+The five-node configuration provides a practical environment for observing quorum behavior and experimenting with failures.
 
-* Real-time visualization of the Raft cluster.
-* Live node roles, terms, and commit indices.
+### 2. 🌐 Interactive Cluster Visualization
+
+Observe the cluster through a web-based dashboard.
+
+* Live visualization of the Raft topology.
+* Node roles, terms, and commit indices.
 * Node selection and individual node controls.
-* Live system logs and cluster-state inspection.
+* Cluster-state inspection and system logs.
 * Client terminal for key-value operations.
-* Dynamic node addition through the existing cluster controls.
+* Network-partition and recovery controls.
+* Performance and consistency information.
 
-### ⚡ Performance Monitoring
+The dashboard helps connect events such as a leader failure or network partition to changes in the underlying cluster.
 
-Monitor the cluster's behavior through a dedicated performance HUD.
+### 3. 🧪 Fault Injection and Recovery
 
-* Throughput in transactions per second.
-* Average and last measured command latency.
-* Committed transaction count.
+Introduce failures and observe how the cluster responds.
+
+Available experiment categories include:
+
+* Killing and reviving nodes.
+* Removing the active leader.
+* Observing replacement leader elections.
+* Creating a 3–2 network partition.
+* Healing network partitions.
+* Inspecting replication lag and recovery behavior.
+* Checking consistency before, during, and after failures.
+
+A central experiment is the five-node 3–2 partition.
+
+Three nodes form a majority and can establish a quorum, while two isolated nodes cannot independently commit new entries without obtaining a majority.
+
+The dashboard allows users to observe this behavior and inspect the resulting cluster state.
+
+### 4. ⚡ Consensus Performance Monitoring
+
+ConsensusCraft includes a performance HUD for examining how the cluster responds to operations and leadership changes.
+
+The metrics include:
+
+* Throughput, measured in transactions per second.
+* Average command latency.
+* Last measured command latency.
+* Number of committed transactions.
 * Failed submission count.
 * Leader failover time.
 
-These metrics help users observe the performance implications of client operations and leadership changes.
+These measurements help users investigate the performance impact of client operations, failures, and elections.
 
-### 🔍 Committed-Ledger Consistency Verification
+Metrics are observations of the current implementation and workload, not universal performance guarantees.
 
-ConsensusLab independently examines committed histories across cluster nodes.
+### 5. 🔗 Committed-Ledger Consistency Verification
 
-The verification system uses canonicalized committed entries and SHA-256 hash chains to compare ledger prefixes.
+Two nodes can have similar application states without necessarily having identical committed histories.
+
+ConsensusCraft includes a verification mechanism that examines committed log histories across nodes.
+
+The ledger verifier uses canonicalized committed entries and SHA-256 hash chains to compare committed histories.
 
 It can identify conditions such as:
 
 * Consistent committed histories.
-* Nodes that are behind the reference history.
+* Nodes that are behind a reference history.
 * Divergent committed histories.
-* Nodes that are unavailable or encounter verification errors.
+* Unavailable nodes.
+* Verification errors.
 
 This helps distinguish a node that is merely behind from one whose committed history differs from the reference.
 
-### 🧠 Independent State-Transition Verification
+### 6. 🧠 Independent State-Transition Verification
 
-ConsensusLab also verifies the state produced by committed operations.
+ConsensusCraft also checks whether the application state produced by committed operations matches an independently reconstructed state.
 
-Rather than using a node's live key-value store to construct the expected state, the verifier independently replays committed log entries from an initial state and compares the reconstructed result with each node's applied state.
+Rather than trusting a node's live key-value store to determine the expected result, the verifier replays committed log entries from an initial state and compares the reconstructed state with the node's applied state.
 
 The verification includes:
 
+* Independent replay of committed operations.
 * Canonical state fingerprints using SHA-256.
 * Comparison at each node's applied index.
 * Separate tracking of commit lag and application lag.
 * Detection of differences between expected and actual state.
-* Explicit handling of unavailable nodes and verification errors.
+* Handling of unavailable nodes and verification errors.
 
-**Why two verification systems?**
+**Why are both verification systems useful?**
 
-Matching final key-value states does not necessarily prove that committed histories match. Ledger verification examines committed history, while state verification examines the state reconstructed from committed operations.
+Ledger verification examines whether nodes agree on committed histories. State verification examines whether applying those committed operations produces the expected application state.
 
-Together, they provide complementary views of distributed consistency.
+These checks answer different questions and provide complementary views of consistency.
 
-### 🧪 Fault Injection & Recovery Experiments
+### 7. 🛡️ Integrity Attack Lab
 
-Experiment with failures and observe how the cluster responds.
+The Integrity Attack Lab provides an environment for stimulating data-tampering scenarios and examining the resulting integrity-verification behavior.
 
-* Kill and revive nodes.
-* Isolate the active leader.
-* Create a 3/2 network partition in a five-node cluster.
-* Heal network partitions.
-* Observe elections, replication lag, and recovery.
-* Inspect consistency statuses before, during, and after failures.
+It helps users investigate questions such as:
 
-These controls make it possible to investigate majority-quorum behavior, node recovery, and convergence after connectivity is restored.
+* What happens when stored data is modified unexpectedly?
+* Can the verification mechanism identify a discrepancy?
+* Does the observed state match the independently reconstructed state?
+* What do the verification results report after the experiment?
+
+The lab is intended to make integrity-related failure scenarios observable and testable.
+
+Its results should be interpreted using the actual tampering experiment and verification output. Detecting a discrepancy does not, by itself, prove that tampering was prevented or that every possible attack can be detected.
+
+**Important:** Integrity verification is a separate capability from Raft consensus. It does not make the underlying Raft protocol Byzantine fault-tolerant.
 
 ---
 
-## 🏗️ System Architecture
+## 🏗️ How It Works
 
-ConsensusLab is organized into three main layers.
+At a high level, ConsensusCraft combines a distributed consensus engine with monitoring, visualization, and verification components.
+
+### Normal operation
+
+1. The cluster starts its nodes.
+2. A leader is elected through the Raft election process.
+3. A client submits a command.
+4. The leader coordinates replication with followers.
+5. The command is committed when the required quorum conditions are satisfied.
+6. Committed entries are applied to the state machine.
+7. Monitoring and verification components expose information about the resulting cluster state.
+
+### When failures occur
+
+1. A node or communication path is disrupted.
+2. The cluster's ability to communicate changes.
+3. The remaining connected nodes attempt to maintain or establish leadership.
+4. Commit operations depend on the availability of a quorum.
+5. Once connectivity returns, replicas can catch up through the implementation's replication and recovery mechanisms.
+6. The dashboard and verification systems allow users to inspect the resulting state.
+
+The actual behavior depends on the experiment, current cluster state, election timing, and implementation details.
+
+---
+
+## 🏛️ System Architecture
+
+ConsensusCraft is organized into three principal layers.
 
 ```mermaid
 flowchart TB
     subgraph Frontend["Interactive Visualization Layer"]
         UI["Web Dashboard"]
-        Topology["Live Raft Topology"]
-        Controls["Client & Fault-Injection Controls"]
+        Topology["Live Cluster Topology"]
+        Controls["Client and Fault-Injection Controls"]
         Metrics["Performance HUD"]
-        Verification["Ledger & State Verification"]
+        Verification["Ledger and State Verification"]
+        AttackLab["Integrity Attack Lab"]
     end
 
-    subgraph Backend["Monitoring & Orchestration Layer"]
+    subgraph Backend["Monitoring and Orchestration Layer"]
         API["FastAPI REST API"]
         WS["WebSocket Event Hub"]
-        Harness["Cluster Lifecycle & Fault Controller"]
-        Monitor["Metrics & Verification APIs"]
+        Harness["Cluster Lifecycle and Fault Controller"]
+        Monitor["Metrics and Verification APIs"]
     end
 
-    subgraph Raft["Distributed Consensus Layer"]
+    subgraph Consensus["Raft Consensus Layer"]
         Leader["Leader"]
         F1["Follower"]
         F2["Follower"]
@@ -124,29 +233,34 @@ flowchart TB
     UI <--> API
     UI <--> WS
     Controls --> Harness
+    AttackLab --> API
     API --> Monitor
-    Harness --> Raft
+    Harness --> Consensus
     Leader <--> F1
     Leader <--> F2
     Leader <--> F3
     Leader <--> F4
-    Raft --> Monitor
+    Consensus --> Monitor
     Monitor --> Metrics
     Monitor --> Verification
     WS --> Topology
 ```
 
-### 1. Interactive Frontend
+### Frontend — Visualization Layer
 
-The HTML, CSS, and JavaScript frontend renders the cluster topology, node information, performance metrics, verification results, and fault-injection controls.
+The frontend uses HTML, CSS, and JavaScript to display the cluster topology, node information, performance metrics, verification results, and experiment controls.
 
-### 2. Monitoring & Orchestration
+### Backend — Monitoring and Orchestration Layer
 
 `monitor.py` provides the FastAPI application, REST endpoints, WebSocket communication, and cluster-control integration.
 
-### 3. Raft Consensus Core
+It connects the dashboard to the underlying Raft implementation and its monitoring components.
 
-The `raft/` package contains the distributed consensus implementation, including node behavior, state models, RPC communication, and the independent verification components.
+### Raft — Consensus Layer
+
+The `raft/` package contains the consensus implementation, including node behavior, state models, RPC communication, and verification components.
+
+The backend exposes the information needed to observe and investigate cluster behavior.
 
 ---
 
@@ -162,7 +276,7 @@ The `raft/` package contains the distributed consensus implementation, including
 | Consensus algorithm     | Raft                             |
 | Ledger verification     | SHA-256 hash chains              |
 | State verification      | Independent committed-log replay |
-| Automated testing       | pytest                           |
+| Automated testing       | `pytest`                         |
 
 ---
 
@@ -170,9 +284,13 @@ The `raft/` package contains the distributed consensus implementation, including
 
 ### Prerequisites
 
+Install the following:
+
 * Python 3.10 or newer.
 * Git.
 * A modern web browser.
+
+The project has been developed and tested with Python 3.12.
 
 ### 1. Clone the repository
 
@@ -183,14 +301,14 @@ cd INNOVISE-2026
 
 ### 2. Create a virtual environment
 
-**Windows PowerShell:**
+**Windows — PowerShell**
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
-**Linux/macOS:**
+**Linux/macOS**
 
 ```bash
 python3 -m venv .venv
@@ -205,9 +323,19 @@ python -m pip install -r requirements.txt
 
 ### 4. Start the application
 
+From the repository root:
+
 ```bash
 python monitor.py
 ```
+
+If your environment already contains the project's virtual environment, you can run the application directly on Windows with:
+
+```powershell
+.\.venv\Scripts\python.exe monitor.py
+```
+
+The default development server uses port `8000`. If that port is already occupied, check whether another instance of the application is running before starting a second instance.
 
 ### 5. Open the dashboard
 
@@ -215,103 +343,49 @@ Navigate to:
 
 **http://localhost:8000**
 
-From the dashboard, you can inspect the cluster, submit key-value commands, view performance metrics, and experiment with node failures and network partitions.
+Wait for the cluster to initialize and observe the leader-election process.
+
+From the dashboard, explore the available client operations, node controls, fault-injection experiments, performance metrics, and verification panels.
 
 ---
 
-## 📡 API Endpoints
+## 🖥️ Exploring the Dashboard
 
-The following monitoring endpoints expose performance and consistency information.
+For a first-time walkthrough, use the following sequence.
 
-| Endpoint                      | Purpose                                         |
-| ----------------------------- | ----------------------------------------------- |
-| `GET /api/metrics`            | Retrieve consensus performance metrics          |
-| `GET /api/ledger/consistency` | Retrieve committed-ledger consistency results   |
-| `GET /api/state/verification` | Retrieve independent state-verification results |
+### Step 1 — Observe a healthy cluster
 
-The dashboard also uses the application's existing REST and WebSocket interfaces for cluster visualization, client operations, and fault-injection controls.
+* Wait for a leader to be elected.
+* Inspect the roles and terms of the nodes.
+* Observe the current commit index.
 
----
+### Step 2 — Submit a client operation
 
-## 🧪 Running the Tests
+* Submit a supported key-value command.
+* Observe the command response.
+* Inspect the log and commit-index changes.
+* Check the resulting state across the nodes.
 
-Run the complete automated test suite from the repository root:
+A successful HTTP response alone should not be treated as proof that an operation was committed. Inspect the committed state and relevant verification results.
 
-```bash
-python -m pytest tests/ -v
-```
+### Step 3 — Simulate leader failure
 
-The suite covers the existing Raft implementation, including state-machine behavior, RPC communication, elections, replication, safety, monitoring, performance metrics, committed-ledger consistency, and independent state verification.
+* Identify the current leader.
+* Use the available node controls to stop it.
+* Observe the election process.
+* Confirm that another leader is selected when the remaining nodes can establish a quorum.
+* Inspect the cluster after it stabilizes.
 
-The current development version has reported **76 passing tests**. Run the command above against your checked-out revision to reproduce the result.
+### Step 4 — Experiment with a network partition
 
----
+* Create a 3–2 partition.
+* Identify the majority and minority groups.
+* Observe leader-election behavior.
+* Examine whether writes can be committed by the majority.
+* Verify that the minority cannot independently commit writes without a quorum.
 
-## 🔬 Example Experiments
+### Step 5 — Heal the partition
 
-### Experiment 1: Client Write
-
-1. Start the cluster and wait for a leader to be elected.
-2. Submit a key-value command through the client terminal.
-3. Observe replication and commit-index changes.
-4. Inspect the global state and verification panels.
-
-### Experiment 2: Leader Failure
-
-1. Select the current leader.
-2. Kill the node.
-3. Observe the remaining nodes elect a replacement leader.
-4. Check whether previously committed data remains available.
-5. Verify the cluster after it stabilizes.
-
-### Experiment 3: Network Partition
-
-1. Create a 3/2 partition in a five-node cluster.
-2. Observe the majority and minority groups.
-3. Monitor commit indices and verification statuses.
-4. Heal the network.
-5. Check whether the nodes converge on the same committed history and state.
-
-The results depend on the actual cluster state and should be confirmed through the dashboard and verification APIs.
-
----
-
-## 📊 What Makes ConsensusLab Different?
-
-ConsensusLab combines three complementary capabilities:
-
-| Capability                     | Question it answers                                                         |
-| ------------------------------ | --------------------------------------------------------------------------- |
-| Performance monitoring         | How is the cluster performing?                                              |
-| Committed-ledger verification  | Do nodes agree on their committed histories?                                |
-| Independent state verification | Does each node's applied state match the independently reconstructed state? |
-
-The fault-injection controls make it possible to observe these properties under changing network and node conditions rather than examining only healthy operation.
-
-The project is intended as an interactive environment for exploring distributed consensus, monitoring behavior, and verifying consistency.
-
----
-
-## ⚠️ Scope & Limitations
-
-* ConsensusLab implements and visualizes Raft-based consensus behavior; it is not a Byzantine fault-tolerant consensus system.
-* Verification reports consistency and discrepancies; it does not automatically repair divergent state.
-* Results reflect the implementation's current verification model and available log/state information.
-* Network-partition experiments should be interpreted using actual commit indices, API results, and recovery behavior.
-* Verification over the current in-memory log does not imply support for arbitrary log compaction or snapshot-based verification.
-
----
-
-## 📚 References
-
-* Ongaro, D., and Ousterhout, J. **In Search of an Understandable Consensus Algorithm.** USENIX Annual Technical Conference, 2014.
-* [The Raft Consensus Algorithm](https://raft.github.io/)
-* [The Raft Paper (PDF)](https://raft.github.io/raft.pdf)
-
----
-
-## 📄 License
-
-This project is distributed under the MIT License. See the repository's license file for details.
-
-The project builds upon the existing Raft implementation in the upstream repository. Preserve the original license and attribution notices.
+* Restore connectivity.
+* Observe replication and recovery.
+* Ch
