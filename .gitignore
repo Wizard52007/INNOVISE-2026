@@ -22,3 +22,6 @@ Thumbs.db
 # Documentation / internal roadmap files
 docs/
 
+# Runtime database and WAL files
+server_wal/*.wal
+

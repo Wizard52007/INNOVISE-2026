@@ -73,7 +73,10 @@ class WebSocketHub:
 class ClusterMonitorController:
     """Orchestrates the active RaftCluster, attaches telemetry hooks, and routes REST commands."""
 
-    def __init__(self, num_nodes: int = 5) -> None:
+    def __init__(self, num_nodes: int = 5, wal_dir: Optional[str] = None) -> None:
+        if wal_dir is not None and not wal_dir.strip():
+            raise ValueError("wal_dir cannot be empty")
+        self.wal_dir = wal_dir
         self.num_nodes = num_nodes
         self.cluster: Optional[RaftCluster] = None
         self.ws_hub = WebSocketHub()
@@ -104,17 +107,31 @@ class ClusterMonitorController:
         node.on_state_change_callbacks.append(on_state)
         node.on_rpc_event_callbacks.append(on_rpc)
 
-    async def start_cluster(self) -> None:
+    async def start_cluster(self, wal_dir: Optional[str] = None) -> None:
         """Boot the Raft cluster and register telemetry hooks on all nodes."""
         self._loop = asyncio.get_running_loop()
-        wal_dir = os.path.join(os.path.dirname(__file__), "server_wal")
-        os.makedirs(wal_dir, exist_ok=True)
+        if wal_dir is not None:
+            if not wal_dir.strip():
+                raise ValueError("wal_dir cannot be empty")
+            effective_wal_dir = wal_dir
+        elif self.wal_dir is not None:
+            if not self.wal_dir.strip():
+                raise ValueError("wal_dir cannot be empty")
+            effective_wal_dir = self.wal_dir
+        elif os.environ.get("RAFT_WAL_DIR") is not None:
+            env_wal = os.environ["RAFT_WAL_DIR"].strip()
+            if not env_wal:
+                raise ValueError("RAFT_WAL_DIR cannot be empty")
+            effective_wal_dir = env_wal
+        else:
+            effective_wal_dir = os.path.join(os.path.dirname(__file__), "server_wal")
+        os.makedirs(effective_wal_dir, exist_ok=True)
         self.cluster = RaftCluster(
             num_nodes=self.num_nodes,
             min_election_timeout=0.300,
             max_election_timeout=0.600,
             heartbeat_interval=0.040,
-            wal_dir=wal_dir,
+            wal_dir=effective_wal_dir,
         )
         await self.cluster.start(wait_for_leader=False)
 

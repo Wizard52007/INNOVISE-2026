@@ -24,8 +24,11 @@ from monitor import app, controller
 
 
 @pytest.fixture(autouse=True)
-def run_around_tests():
-    """Ensure clean cluster state between tests."""
+def run_around_tests(tmp_path, monkeypatch):
+    """Ensure clean cluster state and isolated WAL directory between tests."""
+    test_wal = str(tmp_path / "server_wal")
+    monkeypatch.setenv("RAFT_WAL_DIR", test_wal)
+
     yield
 
 
